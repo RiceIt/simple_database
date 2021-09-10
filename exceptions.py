@@ -1,6 +1,6 @@
 class CommandNotFoundError(Exception):
     def __init__(self, command_name):
-        self.message = f"command {command_name} not found"
+        self.message = f'command "{command_name}" not found'
         super().__init__(self.message)
 
 
@@ -15,3 +15,7 @@ class MissingArgumentError(Exception):
         self.message = f"[{command_name}] missing {len(missing_args)} argument(s): {', '.join(missing_args)}"
         super().__init__(self.message)
 
+
+class NotTransactionError(Exception):
+    def __init__(self):
+        super().__init__("there is no transaction in progress")

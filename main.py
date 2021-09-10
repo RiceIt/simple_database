@@ -2,7 +2,7 @@ import inspect
 from collections import Counter
 from typing import Callable
 
-from exceptions import CommandNotFoundError, TooMuchArgumentError, MissingArgumentError
+from exceptions import CommandNotFoundError, TooMuchArgumentError, MissingArgumentError, NotTransactionError
 
 
 class Transaction:
@@ -45,14 +45,21 @@ class DataBase:
         self._transactions: list[Transaction] = []
 
     @property
+    def _transactions_deleted_values(self) -> list:
+        return [var for transaction in self._transactions for var in transaction.get_deleted_vars()]
+
+    @property
     def _transactions_values(self) -> dict:
         return {var: value for transaction in self._transactions for var, value in transaction.get_vars().items()}
 
     @property
     def _values(self) -> dict:
-        return {**self._commited_values, **self._transactions_values}
+        values = {**self._commited_values, **self._transactions_values}
+        for key in self._transactions_deleted_values:
+            values.pop(key, None)
+        return values
 
-    def execute(self, command_name: str, args: tuple[str]):
+    def execute(self, command_name: str, args: tuple[str, ...]):
         command = self._get_command(command_name)
         self._validate_signature(command_name, args, command)
         self._print(command(*args))
@@ -94,18 +101,26 @@ class DataBase:
             return found_vars
 
     def _end(self):
-        pass
+        raise EOFError
 
     def _begin(self):
         self._transactions.append(Transaction())
 
     def _rollback(self):
-        self._transactions.pop()
+        try:
+            self._transactions.pop()
+        except IndexError:
+            raise NotTransactionError()
 
     def _commit(self):
-        self._commited_values.update(self._transactions[-1].get_vars())
-        for key in self._transactions[-1].get_deleted_vars():
+        # try:
+        #     last_transaction = self._transactions[-1]
+        # except IndexError:
+        #     raise NotTransactionError()
+        self._commited_values.update(self._transactions_values)
+        for key in self._transactions_deleted_values:
             self._commited_values.pop(key, None)
+        self._transactions = []
 
     @staticmethod
     def _print(value: str):
@@ -113,7 +128,7 @@ class DataBase:
             print(value)
 
     @staticmethod
-    def _validate_signature(command_name: str, args: tuple, command: Callable):
+    def _validate_signature(command_name: str, args: tuple[str, ...], command: Callable):
         command_args_count = len(inspect.signature(command).parameters)
         if len(args) > command_args_count:
             raise TooMuchArgumentError(command_name, command_args_count, len(args))
@@ -126,14 +141,12 @@ if __name__ == '__main__':
     database = DataBase()
     while True:
         try:
-            input_string = input("db=> ")
+            input_string = input("db=> ").strip()
+            if input_string:
+                command_name, *args = input_string.split(" ")
+                try:
+                    database.execute(command_name.upper(), args)
+                except (CommandNotFoundError, TooMuchArgumentError, MissingArgumentError, NotTransactionError) as e:
+                    print(e)
         except EOFError:
-            print()
             break
-        if not input_string:
-            break
-        command_name, *args = input_string.split(" ")
-        try:
-            database.execute(command_name.upper(), args)
-        except (CommandNotFoundError, TooMuchArgumentError, MissingArgumentError) as e:
-            print(e)
