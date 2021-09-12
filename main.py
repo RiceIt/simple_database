@@ -1,6 +1,6 @@
 import inspect
 from collections import Counter
-from typing import Callable
+from copy import copy
 
 from exceptions import CommandNotFoundError, TooMuchArgumentError, MissingArgumentError, NotTransactionError
 
@@ -20,8 +20,10 @@ class Transaction:
     def delete_var(self, var: str):
         self._deleted_vars.add(var)
 
-    def get_vars(self) -> dict:
-        return {**self._created_vars, **self._updated_vars}
+    def get_vars(self):
+        vars = copy(self._created_vars)
+        vars.update(self._updated_vars)
+        return vars
 
     def get_deleted_vars(self) -> set:
         return self._deleted_vars
@@ -42,7 +44,7 @@ class DataBase:
         }
 
         self._commited_values = {}
-        self._transactions: list[Transaction] = []
+        self._transactions = []
 
     @property
     def _transactions_deleted_values(self) -> list:
@@ -54,17 +56,18 @@ class DataBase:
 
     @property
     def _values(self) -> dict:
-        values = {**self._commited_values, **self._transactions_values}
+        values = self._commited_values
+        values.update(self._transactions_values)
         for key in self._transactions_deleted_values:
             values.pop(key, None)
         return values
 
-    def execute(self, command_name: str, args: tuple[str, ...]):
+    def execute(self, command_name: str, args: tuple):
         command = self._get_command(command_name)
         self._validate_signature(command_name, args, command)
         self._print(command(*args))
 
-    def _get_command(self, command_name: str) -> Callable:
+    def _get_command(self, command_name: str):
         try:
             return self._commands[command_name]
         except KeyError:
@@ -113,10 +116,6 @@ class DataBase:
             raise NotTransactionError()
 
     def _commit(self):
-        # try:
-        #     last_transaction = self._transactions[-1]
-        # except IndexError:
-        #     raise NotTransactionError()
         self._commited_values.update(self._transactions_values)
         for key in self._transactions_deleted_values:
             self._commited_values.pop(key, None)
@@ -128,7 +127,7 @@ class DataBase:
             print(value)
 
     @staticmethod
-    def _validate_signature(command_name: str, args: tuple[str, ...], command: Callable):
+    def _validate_signature(command_name: str, args: tuple, command):
         command_args_count = len(inspect.signature(command).parameters)
         if len(args) > command_args_count:
             raise TooMuchArgumentError(command_name, command_args_count, len(args))
@@ -141,12 +140,10 @@ if __name__ == '__main__':
     database = DataBase()
     while True:
         try:
-            input_string = input("db=> ").strip()
-            if input_string:
-                command_name, *args = input_string.split(" ")
-                try:
-                    database.execute(command_name.upper(), args)
-                except (CommandNotFoundError, TooMuchArgumentError, MissingArgumentError, NotTransactionError) as e:
-                    print(e)
+            command_name, *args = input("db=> ").strip().split(" ")
+            try:
+                database.execute(command_name.upper(), args)
+            except (CommandNotFoundError, TooMuchArgumentError, MissingArgumentError, NotTransactionError) as e:
+                print(e)
         except EOFError:
             break
